@@ -16,17 +16,8 @@
         enableShellTools: false
         required: false
         toolCallTimeoutMs: 300000
-    - id: dsh-ops-background
-      name: dsh-ops/background
-      disabled: true
-      config:
-        promptPolicy: true
-        enableShellTools: true
-        required: false
-        toolCallTimeoutMs: 300000
     - id: dsh-ops-ptc
       name: dsh-ops/ptc
-      disabled: true
       config:
         required: false
     - id: dsh-ops-hide-official

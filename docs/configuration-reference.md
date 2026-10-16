@@ -6,16 +6,23 @@ Every configuration key, and **which component row owns it**.
 
 ## Where configuration lives
 
-In DSH's configuration editor, find the corresponding `dsh-ops/shell`, `dsh-ops/file`, `dsh-ops/background` or `dsh-ops/ptc` row, adjust `config`, then save; unknown configuration keys cause errors naming the key.
+In DSH's configuration editor, find the corresponding `dsh-ops/shell`, `dsh-ops/file`, `dsh-ops/ptc` or `dsh-ops/hide-official` row, adjust `config`, then save; unknown configuration keys cause errors naming the key.
 
-The bundle declares four independently toggled components. On first installation, the first two are enabled by default:
+The bundle declares four independently toggled components. All four default enabled; shell is omitted on Linux/macOS:
 
 | Row `name` | Component | Default |
 | --- | --- | --- |
-| `dsh-ops/shell` | Terminal and shell | On |
+| `dsh-ops/shell` | Terminal and shell | Windows only |
 | `dsh-ops/file` | Rust file tools | On |
-| `dsh-ops/background` | Background tasks | Off |
-| `dsh-ops/ptc` | Native PTC batches | Off |
+| `dsh-ops/ptc` | Native PTC batches | On, PTC-only |
+| `dsh-ops/hide-official` | Strict schema takeover | On; readiness may block |
+
+## Strict hiding configuration / 严格隐藏配置
+
+`dsh-ops/hide-official` accepts only `strict: true` (default) and `additionalOfficialTools: []` (deployment aliases). `strict: false`, OPS aliases and unknown keys reject activation. Disable the entire row to opt out. Readiness failure is `READINESS_BLOCKED`, restores official schemas and blocks assembly/execution, never automatic mixed mode. Only read/glob/grep mappings are reviewed; run_code cannot be hidden by this host.
+
+PTC accepts only `binaryPath` and `required` (default false). Its row is enabled by default but publishes only in pure PTC. Shell/file use `resolveConfig`; old background settings below describe the compatibility entry, not a fifth bundle component. Windows file publication limitations are explicit in the component reference; hiding is not proof that unavailable writes are implemented.
+
 
 ---
 
@@ -55,7 +62,7 @@ config:
   # bashPath: 'C:\tools\bash.exe'   # honoured in danger-full-access only; see bashPath below
 ```
 
-The `dsh-ops/background` row (its market row is disabled by default):
+Legacy `dsh-ops/background` row (not included in the bundle):
 
 ```yaml
 config:
