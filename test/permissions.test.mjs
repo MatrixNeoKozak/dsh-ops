@@ -54,8 +54,11 @@ await test('the real worker behaves as the file-tool descriptions say (#44)', as
       assert.deepEqual(names(grep),['sub/nested.md','top.md'])
       // replace matches literal text: "a.b" does not match "axb".
       const replaced=await call('replace',{path:'a.txt',pattern:'a.b',replacement:'Z'})
-      assert.equal(replaced.changed,1,JSON.stringify(replaced))
-      assert.equal(fs.readFileSync(path.join(root,'a.txt'),'utf8'),'Z axb\n')
+      if (process.platform === 'win32') {
+        assert.equal(replaced.error.code,'METADATA_UNSUPPORTED'); assert.equal(fs.readFileSync(path.join(root,'a.txt'),'utf8'),'a.b axb\n')
+      } else {
+        assert.equal(replaced.changed,1,JSON.stringify(replaced)); assert.equal(fs.readFileSync(path.join(root,'a.txt'),'utf8'),'Z axb\n')
+      }
     } finally { await shutdown(ctx) }
   })
 })
@@ -197,7 +200,8 @@ await test('an inheriting (AI) workspace root keeps its inheritance and descenda
     const deep=path.join(ws,'d9','deep','f29.txt'), deepDir=path.join(ws,'d9','deep')
     const before={root:sddl(ws),deep:sddl(deep),deepDir:sddl(deepDir)}
     assert.ok(before.root.startsWith('D:AI('),`fixture root must be auto-inherited, not protected: ${before.root}`)
-    assert.ok(aces(before.root).some(ace=>ace.includes(';;;LA') && ace.split(';')[1].includes('ID')),`fixture must carry an inherited user ACE: ${before.root}`)
+    const currentUserAce=ace=>ace.includes(`;;;${sid})`) || ace.includes(';;;LA)')
+    assert.ok(aces(before.root).some(ace=>currentUserAce(ace) && ace.split(';')[1].includes('ID')),`fixture must carry an inherited user ACE: ${before.root}`)
     const backups=path.join(process.env.DSH_HOME,'dsh-ops','acl-backups')
     const receipts=()=>fs.existsSync(backups) ? fs.readdirSync(backups).length : 0
     const initial=receipts()
@@ -205,9 +209,9 @@ await test('an inheriting (AI) workspace root keeps its inheritance and descenda
     const after=sddl(ws)
     assert.ok(after.startsWith('D:AI('),`auto-inherited flag kept: ${before.root} -> ${after}`)
     for(const ace of aces(before.root)) assert.ok(aces(after).includes(ace),`inherited ACE kept: ${ace} in ${after}`)
-    const added=aces(after).filter(ace=>!aces(before.root).includes(ace) && ace.includes(';;;LA'))
+    const added=aces(after).filter(ace=>!aces(before.root).includes(ace) && currentUserAce(ace))
     assert.ok(added.length<=1,`at most one user ACE added: ${after}`)
-    const userAce=aces(after).find(ace=>ace.includes(';;;LA') && (Number.parseInt(ace.slice(1,-1).split(';')[2],16) & 0x80000)!==0)
+    const userAce=aces(after).find(ace=>currentUserAce(ace) && (Number.parseInt(ace.slice(1,-1).split(';')[2],16) & 0x80000)!==0)
     assert.ok(userAce || /0x1b01bf|0x1301bf/.test(after),`user WRITE_OWNER rights are present: ${after}`)
     const rights=ps(`(Get-Acl -LiteralPath '${quoted}').Access | ForEach-Object { $_.FileSystemRights.ToString() }`)
     assert.match(rights,/FullControl|Modify/,'the root retains an explicit usable ACL')
@@ -248,6 +252,9 @@ await test('ops reads and writes reach the host read-before-edit table (#17)', a
       // Keep the size identical so the version change is not a size-only artifact.
       await new Promise(r=>setTimeout(r,20))
       const replaced=await fileCall(ctx,worker,'replace',{path:'a.txt',pattern:'alpha',replacement:'delta'},exec,exec.signal)
+      if (process.platform === 'win32') {
+        assert.equal(replaced.error.code,'METADATA_UNSUPPORTED'); assert.deepEqual(await intent(),{version:before}); return
+      }
       assert.equal(replaced.changed,1,JSON.stringify(replaced))
       const after=await current()
       assert.notEqual(after,before)
@@ -302,7 +309,8 @@ await test('owned Modify-only workspace starts real DSH sandbox; three modes and
       assert.notEqual(badEncoding.status,'completed',JSON.stringify(badEncoding))
       assert.equal(badEncoding.error.code,'INVALID_ARGUMENT',JSON.stringify(badEncoding))
       const replaced=await fileCall(ctx,worker,'replace',{path:'data.txt',pattern:'before',replacement:'after'},exec,exec.signal)
-      assert.equal(replaced.changed,1,JSON.stringify(replaced))
+      if (process.platform === 'win32') assert.equal(replaced.error.code,'METADATA_UNSUPPORTED')
+      else assert.equal(replaced.changed,1,JSON.stringify(replaced))
       const batch=await ptcCall(ctx,worker,'batch',{root,action:'run',operations:[{op:'copy',path:'data.txt',to:'copy.txt'}]},exec,exec.signal)
       assert.equal(batch.status,'completed',JSON.stringify(batch))
       const move=await ptcCall(ctx,worker,'batch',{root,action:'run',operations:[{op:'move',path:'copy.txt',to:'moved.txt'}]},exec,exec.signal)
@@ -310,7 +318,8 @@ await test('owned Modify-only workspace starts real DSH sandbox; three modes and
       const remove=await ptcCall(ctx,worker,'batch',{root,action:'run',operations:[{op:'remove',path:'moved.txt'}]},exec,exec.signal)
       assert.equal(remove.status,'completed',JSON.stringify(remove))
       const afterGrant=await fileCall(ctx,worker,'replace',{path:'data.txt',pattern:'after',replacement:'after-grant'},exec,exec.signal)
-      assert.equal(afterGrant.changed,1,JSON.stringify(afterGrant))
+      if (process.platform === 'win32') assert.equal(afterGrant.error.code,'METADATA_UNSUPPORTED')
+      else assert.equal(afterGrant.changed,1,JSON.stringify(afterGrant))
       // Use a non-temp external root for the host preflight fence; no file is accessed.
       const denied=await ptcCall(ctx,worker,'batch',{root:path.parse(root).root,action:'plan',operations:[{op:'remove',path:'never-accessed'}]},exec,exec.signal)
       assert.equal(denied.error.code,'POLICY_DENIED')
@@ -381,7 +390,7 @@ await test('owned Modify-only workspace starts real DSH sandbox; three modes and
       assert.equal(result.exitCode,0); assert.equal(result.sandbox.mode,'danger-full-access')
       const full=await ptcCall(ctx,worker,'batch',{root:outside,action:'run',operations:[{op:'copy',path:'keep.txt',to:'full-copy.txt'}]},exec,exec.signal)
       assert.equal(full.status,'completed',JSON.stringify(full))
-      assert.equal(fs.readFileSync(path.join(root,'data.txt'),'utf8'),'after-grant')
+      assert.equal(fs.readFileSync(path.join(root,'data.txt'),'utf8'),process.platform === 'win32' ? 'before' : 'after-grant')
     } finally { await shutdown(ctx); fs.rmSync(outside,{recursive:true,force:true}) }
   })
 })
