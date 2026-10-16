@@ -148,14 +148,13 @@ No. It is a reusable upstream shared process; a dead parent alone is not a leak.
 
 ### There is no bundled bash or PowerShell payload
 
-macOS ships no `@dsh-ops/bash-darwin-arm64` or `@dsh-ops/pwsh-darwin-arm64`
-package, and no portable upstream bash exists for macOS. Select the shell the
-plugin should use with `bashPath` (for example `/opt/homebrew/bin/bash`), and
-repeat that key on **every** row that needs bash: a `bashPath` on
-`dsh-ops/shell` alone leaves `dsh-ops/background` without a resolvable bash, and
-its four tools are then never published, without any error being reported.
-PowerShell 7 can be provisioned, but the host disables its `pwsh-sandbox` and
-`tool-pwsh` rows outside Windows, so no pwsh tool appears on macOS.
+macOS has no dsh-ops shell payload. The default bundle therefore disables
+`dsh-ops/shell` and retains the official host `bash`; it does not publish
+`ops_bash`. The strict hiding component remains enabled but reports
+`READINESS_BLOCKED` until every non-exempt official capability has a reviewed OPS
+equivalent. Do not add `bashPath` to a removed background row to infer support.
+PowerShell 7 can be provisioned separately, but the host disables its pwsh rows
+outside Windows.
 
 ### The file tools reject a path under `/tmp`
 

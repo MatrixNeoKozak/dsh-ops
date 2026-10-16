@@ -1,8 +1,9 @@
 # 在 Linux x64 上构建与运行 dsh-ops
 
-Linux x64 是 **file**、**ptc**、**background** 三个组件的受支持目标。**shell**
-组件（`ops_bash`、随包 PowerShell 7、bash IPC 代理）仍仅限 Windows x64 —— Linux
-上没有可发布的随包 bash，插件也不会假装有。
+Linux x64 是 **file**、**ptc**、**hide-official** 三个组件的受支持目标。file
+组件使用独立 Rust worker，当前发布 11 个原生文件工具。**shell** 组件
+（`ops_bash`、随包 PowerShell 7、bash IPC 代理）默认仅在 Windows 启用；Linux
+上由严格隐藏组件保留宿主官方 `bash`，而不是启用 component 1。
 
 Linux 上**没有任何东西随安装包下载**：原生 worker 一律由本地源码构建后落到安装相对
 目录，这正是本文档存在的原因。npm 包仍然只携带 Windows x64 载荷
@@ -10,9 +11,9 @@ Linux 上**没有任何东西随安装包下载**：原生 worker 一律由本�
 
 | 组件 | Linux x64 | 说明 |
 | --- | --- | --- |
-| `dsh-ops/file` | 支持 | 4 个工具：`ops_inspect_local_file`、`ops_grep`、`ops_glob`、`ops_replace` |
+| `dsh-ops/file` | 支持 | 11 个原生工具：inspect、grep、glob、replace、write、edit、diff、stat、copy、move、remove |
 | `dsh-ops/ptc` | 支持 | `ops_batch`、`ops_result`；须显式启用 |
-| `dsh-ops/background` | 支持，但需要一个 bash | job 工具受"可解析的 bash"约束，见下文 |
+| `dsh-ops/hide-official` | 支持 | 严格工具 surface 接管；所有可见官方能力都有审核过的 OPS 等价实现前才会隐藏 |
 | `dsh-ops/shell` | 不支持 | `ops_bash` 与 pwsh 仍仅限 Windows x64 |
 
 ## 前置条件
@@ -75,10 +76,11 @@ runtime/linux-x64/provenance.json
 $ node bin/dsh-ops.mjs status
 ```
 
-## 4. 构建 FastCtx（仅 background 组件需要）
+## 4. 可选旧 FastCtx 后台组件
 
-file 与 PTC 组件使用自己的 Rust worker，**不需要** FastCtx。只有
-`dsh-ops/background` 需要，所以这一步是可选的。
+默认 bundle 不启用 `dsh-ops/background`。file 与 PTC 使用独立 Rust worker；只有
+显式启用旧兼容行时才需要 FastCtx。该兼容行不属于默认四组件，也不构成组件 4 的
+官方能力替代。
 
 ```console
 $ cargo build --release --locked --manifest-path vendor/fastctx/Cargo.toml

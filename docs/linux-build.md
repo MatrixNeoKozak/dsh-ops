@@ -1,9 +1,10 @@
 # Building and running dsh-ops on Linux x64
 
-Linux x64 is a supported target for the **file**, **ptc** and **background**
-components. The **shell** component (`ops_bash`, bundled PowerShell 7, the bash
-IPC proxies) remains Windows x64 only — on Linux there is no bundled bash to
-publish, so the plugin never pretends otherwise.
+Linux x64 is a supported target for the **file**, **ptc** and **hide-official**
+components. The file component publishes eleven native tools. The **shell**
+component (`ops_bash`, bundled PowerShell 7, and Windows Bash IPC proxies) is
+Windows-only by default; on Linux the official host `bash` is retained by the
+strict hiding component instead of being replaced by component 1.
 
 Nothing on Linux is downloaded with the package: the native workers are staged
 locally from source, which is why this page exists. The npm package still
@@ -12,9 +13,9 @@ packages to fetch.
 
 | Component | Linux x64 | Notes |
 | --- | --- | --- |
-| `dsh-ops/file` | yes | 4 tools: `ops_inspect_local_file`, `ops_grep`, `ops_glob`, `ops_replace` |
+| `dsh-ops/file` | yes | 11 native tools: inspect, grep, glob, replace, write, edit, diff, stat, copy, move, remove |
 | `dsh-ops/ptc` | yes | `ops_batch`, `ops_result`; default enabled, PTC-only publication; strict hiding blocks reserved run_code |
-| `dsh-ops/background` | yes, with a bash | job tools are gated on a resolvable bash — see below |
+| `dsh-ops/hide-official` | yes | strict surface takeover; readiness-blocked until every visible official capability has a reviewed OPS equivalent |
 | `dsh-ops/shell` | no | `ops_bash` and pwsh stay Windows x64 |
 
 ## Prerequisites
@@ -82,10 +83,13 @@ Verify it is wired up:
 $ node bin/dsh-ops.mjs status
 ```
 
-## 4. Build FastCtx (only for the background component)
+## 4. Optional legacy FastCtx background component
 
-The file and PTC components use their own Rust worker and do **not** need
-FastCtx. Only `dsh-ops/background` does, so this step is optional.
+The default bundle does not enable the legacy `dsh-ops/background` row. Its
+FastCtx job surface is retained only for compatibility and is not part of the
+four default components. Do not use this section as evidence that the native
+file component depends on FastCtx.
+
 
 ```console
 $ cargo build --release --locked --manifest-path vendor/fastctx/Cargo.toml

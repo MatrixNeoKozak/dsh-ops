@@ -79,7 +79,7 @@ config:
 
 ## Key by key
 
-- `enableShellTools`: deployment switch for the background component; enabling it still requires session `danger-full-access` to publish the four background tools. The file component never publishes command tools.
+- `enableShellTools`: legacy compatibility switch for the optional `dsh-ops/background` row; it does not affect the default four components. The native file component never publishes command tools.
 - `publishBashTool`: publish `ops_bash` using current session policy; restricted modes require the host sandbox, full access uses the host subprocess service.
 - `promptPolicy`: whether to inject the component's runtime guidance; use `extraGuidance` to append instructions.
 - `toolCallTimeoutMs`: FastCtx RPC wait timeout; it does not mean server-side work has terminated. Ceiling `2147483647`.
@@ -98,7 +98,7 @@ config:
 
 ## Prompt registration
 
-Prompts are registered as independent runtime sections, **not written to AGENTS.md**: shell OFF withdraws bash/pwsh routing; file OFF withdraws native file guidance; background OFF withdraws background tools and owned-job guidance. The file component uses its independent Rust worker; FastCtx is retained only by the disabled background component. Four native file tools and `ops_bash` are added by default; duplicate foreground `ops_run` is not published. These changes reduce fixed declaration costs. The Minimal preset overrides additional system sections; PTC mode calls the underlying tools through the SDK with unchanged permission gates.
+Prompts are registered as independent runtime sections, **not written to AGENTS.md**: shell OFF withdraws bash/pwsh routing; file OFF withdraws native file guidance; the optional legacy background row withdraws its owned-job guidance. The file component uses its independent Rust worker and publishes eleven bounded file tools; FastCtx is retained only by the disabled compatibility background component. Windows adds `ops_bash` by default; Linux/macOS retain the official host `bash` because shell is disabled there. PTC mode calls the underlying tools through the SDK with unchanged permission gates.
 
 ---
 
