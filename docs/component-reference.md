@@ -1,6 +1,6 @@
 # Component reference
 
-What each of the four components publishes, with parameters and permission requirements.
+What each of the five components publishes, with parameters and permission requirements.
 
 ---
 
@@ -8,10 +8,11 @@ What each of the four components publishes, with parameters and permission requi
 
 | Row `name` | Description | Default | Published tools |
 | --- | --- | --- | --- |
-| `dsh-ops/shell` | Prefer bash as the terminal, with PowerShell 7 for operations bash cannot cover | On | `ops_bash`; host `pwsh` uses bundled PowerShell 7 |
-| `dsh-ops/file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | Eleven native file tools |
+| `dsh-ops/shell` | Prefer bash as the terminal, with PowerShell 7 for operations bash cannot cover | Windows only | `ops_bash`; host `pwsh` uses bundled PowerShell 7 |
+| `dsh-ops/file` | Native Rust file operations with bounded results | On | Eleven native file tools |
 | `dsh-ops/background` | Managed background tasks for scientific simulations, model training and other long-running processes | Off | Start, read output, list and terminate background jobs |
 | `dsh-ops/ptc` | Independent Rust safe batches and bounded result references, only in pure PTC sessions | Off | `ops_batch`, `ops_result` |
+| `dsh-ops/hide-official` | Strict scoped official-tool takeover | On | No tools; verified restrictions and execution guard |
 
 ---
 
@@ -206,3 +207,40 @@ The routing table the model sees is rendered by the plugin from what it actually
 - [Usage](usage.md) — install, update, remove, CLI
 - [Troubleshooting](troubleshooting.md) — errors and diagnosis
 - [Native PTC](native-ptc.md) — the PTC design and build
+
+
+## `dsh-ops/hide-official` — strict official-tool takeover
+
+This independent component is enabled by default. It removes official capabilities
+from each live agent's actual registry/schema surface using `agent.ctx.tools.restrict`,
+not prompt advice or a shared registry override. Windows retains only official `pwsh`;
+Linux/macOS retain only official `bash`, and the shell component defaults off there.
+Unrelated third-party tools remain untouched. Disabling the whole hiding row restores
+its restrictions and guard without changing other components.
+
+Configuration is validated in `lib/config.js`: `strict` defaults to `true` and **cannot
+be false**. `additionalOfficialTools: []` lists deployment-renamed official tools
+(e.g. a custom `subagent` or `workflow` alias); it is not a replacement mapping.
+The pinned host catalog and dynamic official prefixes live in
+`lib/official-tool-catalog.js`. Host APIs expose names, not provider provenance:
+new official names or custom aliases must be reviewed and registered in that catalog.
+
+Before installing any masks, every visible official capability must have a reviewed,
+implemented equivalent in `OFFICIAL_REPLACEMENTS`, and all four native file tools
+must be visible. A same-named `ops_*` tool is not proof of equivalence. Currently only
+`read`, `glob`, and `grep` have reviewed mappings. **Full-stack takeover is blocked on
+missing equivalents** for write/edit/image, web, delegation, interaction, jobs and other
+host capabilities; this component does not implement those replacements.
+
+Failure rejects agent prompt assembly and denies tool execution with an
+`EXECUTOR_UNAVAILABLE` diagnostic (not a user-authorization denial). No partial hiding
+or silent official/OPS mixing is permitted. Restrictions are rolled back across live
+agents when readiness fails, because ancestor restrictions also reach child scopes.
+The monotonic guard still denies execution even if a later pre-execute listener allows.
+
+`run_code` is an official tool, **not an exception**. The pinned host reserves it outside
+restriction layers, so a PTC/both agent fails closed with an unhideable-transport diagnostic.
+Use a verified native presentation or change the host API before enabling takeover for
+that agent; this component does not force a presentation mode. Own-scope official tool
+registrations that `restrict` cannot hide likewise block assembly. Tool changes trigger
+live reconciliation; unload and agent disposal lift all owned restrictions.

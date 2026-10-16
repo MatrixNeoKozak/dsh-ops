@@ -29,6 +29,8 @@ import {
   publicToolName,
   renderToolingPolicy,
 } from '../lib/policy.js'
+import { resolveHidingConfig } from '../lib/official-tool-hiding.js'
+import { platformSurface } from '../lib/official-tool-catalog.js'
 import { resolvePtcConfig } from '../lib/ptc/index.js'
 import { PTC_TOOLS, definition } from '../lib/ptc/contract.js'
 import { DEFAULT_SERVER_NAME, resolveConfig } from '../lib/config.js'
@@ -225,13 +227,14 @@ if (typeof patch === 'string' && fs.existsSync(path.join(PACKAGE_ROOT, patch))) 
     const rows = Array.isArray(document)
       ? document.flatMap((entry) => (Array.isArray(entry?.insert) ? entry.insert : []))
       : []
-    check(rows.length === 4, 'the bundle declares exactly four components')
-    for (const component of ['shell', 'file', 'background', 'ptc']) {
+    check(rows.length === 5, 'the bundle declares exactly five components')
+    for (const component of ['shell', 'file', 'background', 'ptc', 'hide-official']) {
       const row = rows.find(candidate => candidate?.name === `${pkg.name}/${component}`)
       check(row?.id === `${pkg.name}-${component}`, `the ${component} component has a stable row id`)
       if (!row) continue
-      check((row.disabled === true) === ['background', 'ptc'].includes(component), `${component} has its documented enablement default`)
-      try { (component === 'ptc' ? resolvePtcConfig : resolveConfig)(row.config); check(true, `${component} config is valid`) }
+      const disabled = component === 'shell' ? Function(`return (${row.disabled})`)() : row.disabled === true
+      check(disabled === (component === 'shell' ? !platformSurface().shellDefaultEnabled : ['background', 'ptc'].includes(component)), `${component} has its documented enablement default`)
+      try { (component === 'ptc' ? resolvePtcConfig : component === 'hide-official' ? resolveHidingConfig : resolveConfig)(row.config); check(true, `${component} config is valid`) }
       catch (error) { check(false, `${component} config is valid`, String(error?.message ?? error)) }
     }
   }
