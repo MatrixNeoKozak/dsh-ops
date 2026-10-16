@@ -15,7 +15,6 @@ skip on this platform. Two properties are the reason it exists:
 ```bash
 node scripts/verify-gate.mjs                 # this host, full gate
 node scripts/verify-gate.mjs --skip-install  # node_modules is already current
-node scripts/verify-gate.mjs --skip-fastctx  # no FastCtx backend; the mount suite skips
 node scripts/verify-gate.mjs --json          # machine-readable summary
 node scripts/verify-gate.mjs --keep-going    # run every step, report all failures
 ```
@@ -32,7 +31,7 @@ There is no exit code for "green with a surprise in it" — that is `1`.
 | install | `npm ci --ignore-scripts --registry=https://registry.npmjs.org` | Locked dependencies, and no install-time script runs (the Windows shell payloads are optional dependencies; `--ignore-scripts` is what keeps a Linux install from pretending to carry them) |
 | worker unit tests | `cargo test --locked --manifest-path native/Cargo.toml` | The Rust worker in isolation |
 | stage | `npm run build:ptc` | Builds the worker **and stages it with its provenance receipt** into `runtime/<platform>-<arch>/`. Skipping this is the most common way to get a misleading failure — see the traps below |
-| platform payloads | `npm run build:bash-ipc` (Windows) / `cargo build --release --locked --manifest-path vendor/fastctx/Cargo.toml` (POSIX) | The Windows IPC proxies; the optional FastCtx backend the `mount` suite drives |
+| platform payloads | `npm run build:bash-ipc` (Windows) | The Windows IPC proxies |
 | manifest | `npm run validate:manifest` | The declaration layers agree; asserts `61` |
 | suites | `DSH_HOME=<temp> DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` | Every suite on this host. `DSH_OPS_REQUIRE_RUNTIME=1` turns a runtime-absence skip into a failure, and `DSH_HOME` must be a temporary directory or `test/lib/harness.mjs` refuses to run |
 | closure | `node bin/native-runtime.mjs check --platform <target>` | The staged runtime is complete and its receipt matches the worker byte for byte |
@@ -41,11 +40,17 @@ There is no exit code for "green with a surprise in it" — that is `1`.
 
 | Host | Suites passed | Skipped, and why |
 | --- | --- | --- |
-| `linux-x64` | 30 | none — `mount` only if FastCtx was not built (`--skip-fastctx`) |
-| `darwin-arm64` | 30 | none, same caveat |
-| `win32-x64` | 27 | `file-metadata` and `linux-attributes` (mode bits, POSIX ACLs, user xattrs, inode identity, sparse allocation) and `linux-shell` (the POSIX bash rung, which is its own subject) |
+| `linux-x64` | 27 | none — `mount` only when no native worker can be resolved there |
+| `darwin-arm64` | 27 | none, same caveat |
+| `win32-x64` | 24 | `file-metadata` and `linux-attributes` (mode bits, POSIX ACLs, user xattrs, inode identity, sparse allocation) and `linux-shell` (the POSIX bash rung, which is its own subject) |
 
-Manifest checks are **61** on every platform. Those numbers are the ones the documents
+**Current state:** on `5bf33d4` the POSIX side of the gate is red in `test/bin.test.mjs`
+(2 of 19 checks, Linux and macOS; Windows is green). This script therefore exits `1` on a
+POSIX host for that reason and no other — it reports the failure instead of smoothing over
+it, and `node test/run.mjs bin` reproduces it on its own.
+
+Manifest checks are **59** on every platform. (Measured on `5bf33d4`, the commit that
+removed the FastCtx and background components: those numbers were 30/27 and 61 before it.) Those numbers are the ones the documents
 claim; the script fails if a host disagrees, which is how `docs/windows-verification.md`
 learned it had been promising "exactly 2" skips on Windows when the real answer is three.
 

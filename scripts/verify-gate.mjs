@@ -23,9 +23,12 @@
  *
  *   node scripts/verify-gate.mjs                     # this host, full gate
  *   node scripts/verify-gate.mjs --skip-install      # node_modules is already current
- *   node scripts/verify-gate.mjs --skip-fastctx      # no FastCtx; the mount suite skips
  *   node scripts/verify-gate.mjs --json              # machine-readable summary
  *   node scripts/verify-gate.mjs --keep-going        # run every step, report all failures
+ *
+ * A red host is reported, not smoothed over. As of `5bf33d4` the POSIX side of the gate
+ * fails in `test/bin.test.mjs` on both Linux and macOS (tracked upstream), so this script
+ * exits 1 there for that reason and not for anything it did itself.
  *
  * Exit codes: 0 all steps passed, 1 a step failed, 2 the host cannot answer this gate
  * (wrong target, missing toolchain) — never a green run for either.
@@ -59,7 +62,8 @@ const KEEP_GOING = flag('keep-going')
  * Windows is the interesting one: `file-metadata` and `linux-attributes` are POSIX
  * concepts (mode bits, POSIX ACLs, `user.*` xattrs, inode identity, sparse allocation),
  * and `linux-shell` drives the POSIX bash rung — its own subject. On a POSIX host the
- * only suite that may skip is `mount`, and only when no FastCtx backend is available.
+ * only suite that may skip is `mount`, and only when no native worker can be resolved
+ * there (component composition needs it).
  * A platform that skips anything else is a finding, not a footnote.
  */
 const ALLOWED_SKIPS = TARGET === 'win32-x64'
@@ -67,9 +71,11 @@ const ALLOWED_SKIPS = TARGET === 'win32-x64'
   : ['mount']
 
 /** The manifest check count the docs promise. */
-const MANIFEST_CHECKS = 61
+const MANIFEST_CHECKS = 59
 
 const steps = []
+/** Steps that exited non-zero; only populated under `--keep-going`. */
+const stepFailures = []
 
 /** Run one step, stream its output, and return `{code, output}`. */
 async function run(title, command, args, { env = {}, optional = false } = {}) {
@@ -82,17 +88,31 @@ async function run(title, command, args, { env = {}, optional = false } = {}) {
   const code = await new Promise(resolve => child.on('close', resolve))
   const step = { title, command: shown, code, optional }
   steps.push(step)
-  if (code !== 0 && !optional) throw Object.assign(new Error(`step failed (${code}): ${shown}`), { step })
+  if (code !== 0 && !optional) {
+    // `--keep-going` runs the rest and reports everything at the end; the default stops at
+    // the first failure, because a later step's verdict is not independent of this one.
+    if (!KEEP_GOING) throw Object.assign(new Error(`step failed (${code}): ${shown}`), { step })
+    stepFailures.push(`${title}: exited ${code}`)
+  }
   return { ...step, output }
 }
 
-/** The suite summary `test/run.mjs` prints. */
+/**
+ * The suite summary `test/run.mjs` prints, in both of its shapes: the green one
+ * (`30 suite(s) passed`) and the red one (`1 of 27 suite(s) failed`). A failing run still
+ * has to be readable — "the runner did not finish" would hide which suite broke.
+ */
 function parseSummary(output) {
-  const summary = /dsh-ops test: (\d+) suite\(s\) passed(?:, (\d+) skipped)?/.exec(output)
   const skipped = [...new Set([...output.matchAll(/^dsh-ops ([a-z-]+): skipped \(/gm)].map(match => match[1]))]
-  return summary === null
-    ? { passed: null, skippedCount: null, skipped }
-    : { passed: Number(summary[1]), skippedCount: summary[2] === undefined ? 0 : Number(summary[2]), skipped }
+  const green = /dsh-ops test: (\d+) suite\(s\) passed(?:, (\d+) skipped)?/.exec(output)
+  if (green !== null) {
+    return { passed: Number(green[1]), failed: 0, skippedCount: green[2] === undefined ? 0 : Number(green[2]), skipped, reported: true }
+  }
+  const red = /dsh-ops test: (\d+) of (\d+) suite\(s\) failed/.exec(output)
+  if (red !== null) {
+    return { passed: Number(red[2]) - Number(red[1]), failed: Number(red[1]), skippedCount: skipped.length, skipped, reported: true }
+  }
+  return { passed: null, failed: null, skippedCount: null, skipped, reported: false }
 }
 
 function parseManifest(output) {
@@ -118,35 +138,33 @@ async function main() {
   await run('native worker unit tests', 'cargo', ['test', '--locked', '--manifest-path', 'native/Cargo.toml'])
   await run('build and stage the native worker', 'npm', ['run', 'build:ptc'])
 
-  if (TARGET === 'win32-x64') {
-    await run('Windows IPC payloads', 'npm', ['run', 'build:bash-ipc'])
-  } else {
-    await run('optional FastCtx backend', 'cargo', ['build', '--release', '--locked', '--manifest-path', 'vendor/fastctx/Cargo.toml'], { optional: flag('skip-fastctx') })
-  }
+  if (TARGET === 'win32-x64') await run('Windows IPC payloads', 'npm', ['run', 'build:bash-ipc'])
 
   const manifest = await run('manifest contract', 'npm', ['run', 'validate:manifest'])
   const manifestChecks = parseManifest(manifest.output)
 
   const env = { DSH_HOME: mkdtempSync(path.join(tmpdir(), 'dsh-ops-gate-')), DSH_OPS_REQUIRE_RUNTIME: '1' }
-  if (TARGET !== 'win32-x64') env.DSH_OPS_FASTCTX_BIN = path.join(PACKAGE_ROOT, 'vendor/fastctx/target/release/fastctx')
   const verify = await run('full suite verification', 'npm', ['run', 'verify'], { env })
   const summary = parseSummary(verify.output)
 
   await run('staged runtime closure', 'node', ['bin/native-runtime.mjs', 'check', '--platform', TARGET])
 
   // The assertions. Failures here are the point of the script, not a detail of it.
-  const failures = []
+  const failures = [...stepFailures]
   if (manifestChecks !== MANIFEST_CHECKS) failures.push(`manifest checks: expected ${MANIFEST_CHECKS}, got ${manifestChecks ?? 'none reported'}`)
-  if (summary.passed === null) failures.push('no suite summary line; the runner did not finish')
+  if (!summary.reported) failures.push('no suite summary line; the runner did not finish')
+  if (summary.failed > 0) failures.push(`the runner reported ${summary.failed} failing suite(s); see its output above for the check names`)
+  if (verify.code !== 0 && stepFailures.length === 0) failures.push(`the verification step exited ${verify.code}`)
   const unexpected = summary.skipped.filter(name => !ALLOWED_SKIPS.includes(name))
   if (unexpected.length > 0) failures.push(`suites skipped that must not skip on ${TARGET}: ${unexpected.join(', ')} (a skip is not a pass)`)
-  if (summary.skippedCount !== summary.skipped.length) failures.push(`the runner counted ${summary.skippedCount} skip(s) but ${summary.skipped.length} were named`)
+  if (summary.reported && summary.skippedCount !== summary.skipped.length) failures.push(`the runner counted ${summary.skippedCount} skip(s) but ${summary.skipped.length} were named`)
 
   const result = {
     host: HOST,
     target: TARGET,
     manifestChecks,
     suitesPassed: summary.passed,
+    suitesFailed: summary.failed,
     suitesSkipped: summary.skipped,
     allowedSkips: ALLOWED_SKIPS,
     failures,
@@ -156,7 +174,7 @@ async function main() {
   else {
     process.stdout.write('\n=== summary\n')
     for (const step of steps) process.stdout.write(`  ${step.code === 0 ? 'ok  ' : 'FAIL'} ${step.title}\n`)
-    process.stdout.write(`  ${summary.passed ?? '?'} suites passed; skipped: ${summary.skipped.join(', ') || 'none'} (allowed: ${ALLOWED_SKIPS.join(', ')})\n`)
+    process.stdout.write(`  ${summary.passed ?? '?'} suites passed${summary.failed === null || summary.failed === 0 ? '' : `, ${summary.failed} failed`}; skipped: ${summary.skipped.join(', ') || 'none'} (allowed: ${ALLOWED_SKIPS.join(', ')})\n`)
     process.stdout.write(`  manifest: ${manifestChecks ?? '?'}/${MANIFEST_CHECKS} checks\n`)
     for (const failure of failures) process.stdout.write(`  FAIL ${failure}\n`)
   }
